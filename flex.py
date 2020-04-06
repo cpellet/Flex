@@ -230,6 +230,25 @@ class flex(tk.Tk):
 
     def edit_cell(self, response):
         content = self.sheet.get_cell_data(response[0], response[1])
+        if '\n' in content:
+            newcells = content.splitlines()
+            for x in range(len(newcells)):
+                if '\t' in newcells[x]:
+                    newcellsc = re.split(r'\t+', newcells[x])
+                    for y in range(len(newcellsc)):
+                        self.sheet.set_cell_data(response[0] + x, response[1] + y, newcellsc[y])
+                        self.commitCellChanges([response[0] + x, response[1] + y])
+                        if x == len(newcells)-1:
+                            self.sheet.column_width(response[1]+y, 120)
+                else:
+                    self.sheet.set_cell_data(response[0]+x, response[1], newcells[x])
+                    self.commitCellChanges([response[0]+x, response[1]])
+                self.sheet.row_height(row=response[0], height=15)
+        else:
+            self.commitCellChanges(response)
+
+    def commitCellChanges(self, response):
+        content = self.sheet.get_cell_data(response[0], response[1])
         if (content == ""):
             self.formulas[int(response[0])][int(response[1])] = ""
             self.sheet.refresh(False, False)
@@ -238,15 +257,15 @@ class flex(tk.Tk):
         else:
             self.formulas[int(response[0])][int(response[1])] = content
             self.updateCellFromFormulaResult(response)
-            if(xl_rowcol_to_cell(response[0], response[1]) in self.updateBinds):
-                for updQE in self.updateBinds[xl_rowcol_to_cell(response[0], response[1])]:
-                    self.updateCellFromFormulaResult(xl_cell_to_rowcol(updQE))
         for c in self.updateBinds:
             if xl_rowcol_to_cell(response[0], response[1]) in self.updateBinds[c]:
                 if c not in self.formulas[int(response[0])][int(response[1])]:
                     self.updateBinds[c].remove(xl_rowcol_to_cell(response[0], response[1]))
 
     def updateCellFromFormulaResult(self, response):
+        if (xl_rowcol_to_cell(response[0], response[1]) in self.updateBinds):
+            for updQE in self.updateBinds[xl_rowcol_to_cell(response[0], response[1])]:
+                self.updateCellFromFormulaResult(xl_cell_to_rowcol(updQE))
         self.sheet.set_cell_data(response[0], response[1], self.interpret(self.getFormulaForResponse(response)[1:], response))
         self.sheet.refresh(False, False)
 
