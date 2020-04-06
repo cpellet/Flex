@@ -1,6 +1,6 @@
 # Flex
 
-Foobar is data-science oriented spreadsheet desktop program written in python, with a TkInter GUI.
+Flex is data-science oriented spreadsheet desktop program written in python, with a TkInter GUI.
 
 ## Installation
 
