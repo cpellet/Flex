@@ -1,8 +1,12 @@
 from xlsxwriter.utility import xl_rowcol_to_cell
 from xlsxwriter.utility import xl_cell_to_rowcol
 import tkinter as tk
+from tkinter.filedialog import askopenfilename, asksaveasfilename
 import tksheet
 import parser
+import os
+import csv
+import sys
 import re
 
 INIT_ROWS = 100
@@ -14,14 +18,16 @@ class flex(tk.Tk):
     selectedCell = None
     selectedCellSumMean = None
     updateBinds = {}
+    highlightedCells = []
+    openfile = ""
     def __init__(self):
         tk.Tk.__init__(self)
         self.selectedCell = tk.StringVar()
         self.selectedCellSumMean = tk.StringVar()
         selectedCellLabel = tk.Label(self, textvariable=self.selectedCell)
-        selectedCellLabel.grid(row=1, column=0, sticky="se")
+        selectedCellLabel.grid(row=2, column=0, sticky="se")
         selectedCellSumMeanLabel = tk.Label(self, textvariable=self.selectedCellSumMean)
-        selectedCellSumMeanLabel.grid(row=1, column=0, sticky="sw")
+        selectedCellSumMeanLabel.grid(row=2, column=0, sticky="sw")
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
         self.sheet = tksheet.Sheet(self,
@@ -55,9 +61,30 @@ class flex(tk.Tk):
                                          "delete",
                                          "undo",
                                          "edit_cell"))
-        # self.sheet.enable_bindings("enable_all")
-        # self.sheet.disable_bindings() #uses the same strings
-        self.sheet.grid(row=0, column=0, sticky="nswe")
+        self.sheet.grid(row=1, column=0, sticky="nswe")
+        self.menubar = tk.Menu(self)
+        importsubm = tk.Menu(self.menubar, tearoff=0)
+        importsubm.add_command(label="Excel (.xls, .xlsx)")
+        importsubm.add_command(label="CSV (.csv)")
+        exportsubm = tk.Menu(self.menubar, tearoff=0)
+        exportsubm.add_command(label="Excel (.xls, .xlsx)")
+        exportsubm.add_command(label="CSV (.csv)")
+        filemenu = tk.Menu(self.menubar, tearoff=0)
+        filemenu.add_command(label="New", command=self.restart, accelerator="Command-n")
+        filemenu.add_command(label="Open...", command=self.open, accelerator="Command-o")
+        filemenu.add_cascade(label='Import', menu=importsubm)
+        filemenu.add_cascade(label='Export', menu=exportsubm)
+        filemenu.add_command(label="Save", command=self.save, accelerator="Command-s")
+        filemenu.add_command(label="Save as...", command=self.saveas, accelerator="Command-shift-s")
+        filemenu.add_separator()
+        filemenu.add_command(label="Exit", command=self.quit, accelerator="Command-q")
+        self.menubar.add_cascade(label="File", menu=filemenu)
+
+        helpmenu = tk.Menu(self.menubar, tearoff=0)
+        helpmenu.add_command(label="Help Index", command=None)
+        helpmenu.add_command(label="About...", command=None)
+        self.menubar.add_cascade(label="Help", menu=helpmenu)
+        self.config(menu=self.menubar)
 
         # __________ HIGHLIGHT / DEHIGHLIGHT CELLS __________
 
@@ -113,15 +140,15 @@ class flex(tk.Tk):
             ("drag_select_columns", self.drag_select_columns),
             ("deselect", self.deselect),
             ("edit_cell", self.edit_cell),
-            ("begin_edit_cell", self.edit_cell_begin)
+            ("begin_edit_cell", self.edit_cell_begin),
+            ("delete_key", self.delk)
         ])
 
         # self.sheet.extra_bindings([("cell_select", None)]) #unbind cell select
         # self.sheet.extra_bindings("unbind_all") #remove all functions set by extra_bindings()
 
-        # __________ BINDING NEW RIGHT CLICK FUNCTION __________
-
         self.sheet.bind("<3>", self.rc)
+        self.sheet.bind("<BackSpace>", self.delk)
 
         # __________ SETTING HEADERS __________
 
@@ -218,10 +245,19 @@ class flex(tk.Tk):
         print(region, row, column)
 
     def deselect(self, event):
-        print("deselected")
+        print(event)
 
     def rc(self, event):
         print(event)
+
+    def delk(self, event):
+        for cell in self.sheet.get_selected_cells():
+            for bnd in self.updateBinds:
+                if xl_rowcol_to_cell(cell[0], cell[1]) in self.updateBinds[bnd]:
+                    self.updateBinds[bnd].remove(xl_rowcol_to_cell(cell[0], cell[1]))
+            self.formulas[cell[0]][cell[1]] = "=0"
+            self.sheet.set_cell_data(cell[0], cell[1], "")
+        self.sheet.refresh(False, False)
 
     def edit_cell_begin(self, response):
         if(self.getFormulaForResponse(response)!="=0"):
@@ -250,10 +286,10 @@ class flex(tk.Tk):
     def commitCellChanges(self, response):
         content = self.sheet.get_cell_data(response[0], response[1])
         if (content == ""):
-            self.formulas[int(response[0])][int(response[1])] = ""
-            self.sheet.refresh(False, False)
+            self.formulas[int(response[0])][int(response[1])] = "=0"
         elif(content[0]!="="):
             self.formulas[int(response[0])][int(response[1])] = "=" + content
+            self.updateCellFromFormulaResult(response)
         else:
             self.formulas[int(response[0])][int(response[1])] = content
             self.updateCellFromFormulaResult(response)
@@ -294,20 +330,71 @@ class flex(tk.Tk):
     def getFormulaForResponse(self, response):
         return self.formulas[int(response[0])][int(response[1])]
 
+    def updateHighlightedCells(self, reset=False):
+        for cell in self.highlightedCells:
+            if reset:
+                self.sheet.dehighlight_cells(row=cell[0], column=cell[1])
+            else:
+                self.sheet.highlight_cells(row=cell[0], column=cell[1], bg="#add8e6", fg="white")
+        if reset:
+            self.highlightedCells = []
+        self.sheet.refresh(False, False)
+
     def cell_select(self, response):
         self.selectedCell.set(xl_rowcol_to_cell(response[1], response[2]))
+        self.selectedCellSumMean.set("")
+        self.updateHighlightedCells(True)
+        for bnd in self.updateBinds:
+            if xl_rowcol_to_cell(response[1], response[2]) in self.updateBinds[bnd]:
+                self.highlightedCells.append(xl_cell_to_rowcol(bnd))
+        self.updateHighlightedCells()
 
     def shift_select_cells(self, response):
         print(self.updateBinds)
 
     def drag_select_cells(self, response):
         self.selectedCell.set(xl_rowcol_to_cell(response[1], response[2]) + ":" + xl_rowcol_to_cell(response[3]-1, response[4]-1))
+        total = 0
+        for cell in self.sheet.get_selected_cells():
+            val = self.sheet.get_cell_data(cell[0], cell[1])
+            try:
+                float(val)
+                total+=float(self.sheet.get_cell_data(cell[0], cell[1], False))
+            except ValueError:
+                pass
+        self.selectedCellSumMean.set("Sum: " + str(total) + " Average: " + str(total/len(self.sheet.get_selected_cells())))
+
+    def open(self):
+        filename = askopenfilename(filetypes=[("Flex file","*.flx")])
+        self.sheet.set_sheet_data([ [""] * INIT_COLS for _ in range(INIT_ROWS)])
+        self.updateBinds={}
+        self.openfile = filename
+        self.formulas = list(csv.reader(open(filename)))
+        for x in range(len(self.formulas)):
+            for y in range(len(self.formulas[0])):
+                if(self.formulas[x][y]!="=0"):
+                    self.updateCellFromFormulaResult((x, y))
+        self.sheet.refresh()
+
+    def save(self):
+        if(self.openfile==""):
+            self.saveas()
+        else:
+            with open(self.openfile, "w+") as my_csv:
+                csvWriter = csv.writer(my_csv, delimiter=',')
+                csvWriter.writerows(self.formulas)
+
+    def saveas(self):
+        self.openfile = asksaveasfilename(filetypes=[("Flex file","*.flx")])
+        with open(self.openfile, "w+") as my_csv:
+            csvWriter = csv.writer(my_csv, delimiter=',')
+            csvWriter.writerows(self.formulas)
 
     def ctrl_a(self, response):
-        print(response)
+        self.selectedCell.set(xl_rowcol_to_cell(response[1], response[2]) + ":" + xl_rowcol_to_cell(response[3] - 1, response[4] - 1))
 
     def row_select(self, response):
-        print(response)
+        self.selectedCell.set(xl_rowcol_to_cell(response[1], 0) + ":" + xl_rowcol_to_cell(response[1], INIT_COLS-1))
 
     def shift_select_rows(self, response):
         print(response)
@@ -316,8 +403,11 @@ class flex(tk.Tk):
         pass
         # print (response)
 
+    def restart(self):
+        os.execl(sys.executable, sys.executable, *sys.argv)
+
     def column_select(self, response):
-        print(response)
+        self.selectedCell.set(xl_rowcol_to_cell(1, response[1]) + ":" + xl_rowcol_to_cell(INIT_ROWS-1, response[1]))
 
     def shift_select_columns(self, response):
         print(response)
