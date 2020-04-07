@@ -346,7 +346,6 @@ class flex(tk.Tk):
                 arrystr = arrystr[:-1]
                 arrystr += "]"
                 f = f.replace(match.group(), arrystr)
-                print(f)
         for match in iterv:
             if(match.group()[0].isalpha()):
                 if match.group() == xln:
