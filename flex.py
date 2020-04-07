@@ -315,7 +315,7 @@ class flex(tk.Tk):
 
     def interpret(self, f, response):
         vinst = re.compile('[\$]?([aA-zZ]+)[\$]?(\d+)')
-        rinst = re.compile('(^[A-Z]{1,2}[0-9]{1,}:{1}[A-Z]{1,2}[0-9]{1,}$)|(^\$(([A-Z])|([a-z])){1,2}([0-9]){1,}:{1}\$(([A-Z])|([a-z])){1,2}([0-9]){1,}$)|(^\$(([A-Z])|([a-z])){1,2}(\$){1}([0-9]){1,}:{1}\$(([A-Z])|([a-z])){1,2}(\$){1}([0-9]){1,}$)')
+        rinst = re.compile('([A-Z]{1,2}[0-9]{1,}:{1}[A-Z]{1,2}[0-9]{1,})|(^\$(([A-Z])|([a-z])){1,2}([0-9]){1,}:{1}\$(([A-Z])|([a-z])){1,2}([0-9]){1,}$)|(^\$(([A-Z])|([a-z])){1,2}(\$){1}([0-9]){1,}:{1}\$(([A-Z])|([a-z])){1,2}(\$){1}([0-9]){1,}$)')
         iterv = vinst.finditer(f)
         iterr = rinst.finditer(f)
         varsn = {}
@@ -346,18 +346,20 @@ class flex(tk.Tk):
                 arrystr = arrystr[:-1]
                 arrystr += "]"
                 f = f.replace(match.group(), arrystr)
+                print(f)
         for match in iterv:
-            if match.group() == xln:
-                return "RECURSION ERROR"
-            else:
-                if(self.checkAlreadyProcessed(parspfr, match)):
-                    pass
+            if(match.group()[0].isalpha()):
+                if match.group() == xln:
+                    return "RECURSION ERROR"
                 else:
-                    refs.append(match.group())
-                    varsn[match.group()] = self.interpret(self.formulas[xl_cell_to_rowcol(match.group())[0]][xl_cell_to_rowcol(match.group())[1]][1:], xl_cell_to_rowcol(match.group()))
-                    if(match.group() not in self.updateBinds):
-                        self.updateBinds[match.group()] = []
-                    self.updateBinds[match.group()].append(xln)
+                    if(self.checkAlreadyProcessed(parspfr, match)):
+                        pass
+                    else:
+                        refs.append(match.group())
+                        varsn[match.group()] = self.interpret(self.formulas[xl_cell_to_rowcol(match.group())[0]][xl_cell_to_rowcol(match.group())[1]][1:], xl_cell_to_rowcol(match.group()))
+                        if(match.group() not in self.updateBinds):
+                            self.updateBinds[match.group()] = []
+                        self.updateBinds[match.group()].append(xln)
         for updc in self.updateBinds:
             self.updateBinds[updc] = list(dict.fromkeys(self.updateBinds[updc]))
         import math
