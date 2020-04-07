@@ -1,6 +1,9 @@
 from xlsxwriter.utility import xl_rowcol_to_cell
 from xlsxwriter.utility import xl_cell_to_rowcol
+import xlsxwriter
 import tkinter as tk
+from tkinter import messagebox
+import statistics
 from tkinter.filedialog import askopenfilename, asksaveasfilename
 import tksheet
 import parser
@@ -9,8 +12,8 @@ import csv
 import sys
 import re
 
-INIT_ROWS = 100
-INIT_COLS = 100
+INIT_ROWS = 1000
+INIT_COLS = 1000
 
 class flex(tk.Tk):
     formulas = [ ["=0"] * INIT_COLS for _ in range(INIT_ROWS)]
@@ -26,9 +29,9 @@ class flex(tk.Tk):
         self.selectedCell = tk.StringVar()
         self.selectedCellSumMean = tk.StringVar()
         selectedCellLabel = tk.Label(self, textvariable=self.selectedCell)
-        selectedCellLabel.grid(row=2, column=0, sticky="se")
+        selectedCellLabel.grid(row=1, column=0, sticky="se")
         selectedCellSumMeanLabel = tk.Label(self, textvariable=self.selectedCellSumMean)
-        selectedCellSumMeanLabel.grid(row=2, column=0, sticky="sw")
+        selectedCellSumMeanLabel.grid(row=1, column=0, sticky="sw")
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
         self.sheet = tksheet.Sheet(self,
@@ -62,14 +65,14 @@ class flex(tk.Tk):
                                          "delete",
                                          "undo",
                                          "edit_cell"))
-        self.sheet.grid(row=1, column=0, sticky="nswe")
+        self.sheet.grid(row=0, column=0, sticky="nswe")
         self.menubar = tk.Menu(self)
         importsubm = tk.Menu(self.menubar, tearoff=0)
-        importsubm.add_command(label="Excel (.xls, .xlsx)")
-        importsubm.add_command(label="CSV (.csv)")
+        importsubm.add_command(label="Excel (.xlsx)")
+        importsubm.add_command(label="CSV (.csv)", command=self.importCsv)
         exportsubm = tk.Menu(self.menubar, tearoff=0)
-        exportsubm.add_command(label="Excel (.xls, .xlsx)")
-        exportsubm.add_command(label="CSV (.csv)")
+        exportsubm.add_command(label="Excel (.xlsx)", command=self.exportToExcel)
+        exportsubm.add_command(label="CSV (.csv)", command=self.exportToCsv)
         filemenu = tk.Menu(self.menubar, tearoff=0)
         filemenu.add_command(label="New", command=self.restart, accelerator="Command-n")
         filemenu.add_command(label="Open...", command=self.open, accelerator="Command-o")
@@ -397,15 +400,33 @@ class flex(tk.Tk):
 
     def drag_select_cells(self, response):
         self.selectedCell.set(xl_rowcol_to_cell(response[1], response[2]) + ":" + xl_rowcol_to_cell(response[3]-1, response[4]-1))
-        total = 0
-        for cell in self.sheet.get_selected_cells():
+        self.computeStatsForSelectedCells()
+
+    def computeStatsForSelectedCells(self):
+        cells=[]
+        contents=[]
+        contentsf=[]
+        if(len(self.sheet.get_selected_columns())!=0):
+            for col in self.sheet.get_selected_columns():
+                for y in range(self.sheet.total_rows()):
+                    cells.append([y, col])
+        if (len(self.sheet.get_selected_rows()) != 0):
+            for row in self.sheet.get_selected_rows():
+                for x in range(self.sheet.total_columns()):
+                    cells.append([row, x])
+        for c in self.sheet.get_selected_cells():
+            cells.append(c)
+        for cell in cells:
             val = self.sheet.get_cell_data(cell[0], cell[1])
+            contents.append(val)
             try:
-                float(val)
-                total+=float(self.sheet.get_cell_data(cell[0], cell[1], False))
+                contentsf.append(float(val))
             except ValueError:
                 pass
-        self.selectedCellSumMean.set("Sum: " + str(total) + " Average: " + str(total/len(self.sheet.get_selected_cells())))
+        if(len(contentsf)!=0):
+            self.selectedCellSumMean.set("Sum: " + str(sum(contentsf)) + "\t Mean: " + str(statistics.mean(contentsf)) + "\t Median: " + str(statistics.median(contentsf)) +"\t Mode: " + str(statistics.mode(contents)))
+        else:
+            self.selectedCellSumMean.set("Mode: " + str(statistics.mode(contents)))
 
     def open(self):
         filename = askopenfilename(filetypes=[("Flex file","*.flx")])
@@ -432,11 +453,44 @@ class flex(tk.Tk):
             csvWriter = csv.writer(my_csv, delimiter=',')
             csvWriter.writerows(self.formulas)
 
+    def importCsv(self):
+        filename = askopenfilename(filetypes=[("Comma separated values", "*.csv")])
+        with open(filename, "r") as f:
+            reader = csv.reader(f)
+            x=0
+            for row in reader:
+                y=0
+                for e in row:
+                    self.sheet.set_cell_data(x, y, e)
+                    y+=1
+                x+=1
+        self.sheet.refresh(False, False)
+
+    def exportToCsv(self):
+        self.openfile = asksaveasfilename(filetypes=[("Comma separated values", "*.csv")])
+        with open(self.openfile, "w+") as my_csv:
+            csvWriter = csv.writer(my_csv, delimiter=',')
+            csvWriter.writerows(self.sheet.get_sheet_data())
+
+    def exportToExcel(self):
+        messagebox.showinfo(message="Flex will not export cell formulas due to compatibility issues", title="Warning")
+        writefile = asksaveasfilename(filetypes=[("Microsoft excel workbook","*.xlsx")])
+        workbook = xlsxwriter.Workbook(writefile)
+        worksheet = workbook.add_worksheet()
+        for x in range(len(self.formulas)):
+            for y in range(len(self.formulas[x])):
+                try:
+                    worksheet.write(x, y, float(self.sheet.get_cell_data(x, y)))
+                except ValueError:
+                    worksheet.write(x, y, self.sheet.get_cell_data(x, y))
+        workbook.close()
+
     def ctrl_a(self, response):
         self.selectedCell.set(xl_rowcol_to_cell(response[1], response[2]) + ":" + xl_rowcol_to_cell(response[3] - 1, response[4] - 1))
 
     def row_select(self, response):
         self.selectedCell.set(xl_rowcol_to_cell(response[1], 0) + ":" + xl_rowcol_to_cell(response[1], INIT_COLS-1))
+        self.computeStatsForSelectedCells()
 
     def shift_select_rows(self, response):
         print(response)
@@ -449,7 +503,8 @@ class flex(tk.Tk):
         os.execl(sys.executable, sys.executable, *sys.argv)
 
     def column_select(self, response):
-        self.selectedCell.set(xl_rowcol_to_cell(1, response[1]) + ":" + xl_rowcol_to_cell(INIT_ROWS-1, response[1]))
+        self.selectedCell.set(xl_rowcol_to_cell(0, response[1]) + ":" + xl_rowcol_to_cell(INIT_ROWS-1, response[1]))
+        self.computeStatsForSelectedCells()
 
     def shift_select_columns(self, response):
         print(response)
