@@ -18,6 +18,7 @@ class flex(tk.Tk):
     selectedCell = None
     selectedCellSumMean = None
     updateBinds = {}
+    cellRefs = {}
     highlightedCells = []
     openfile = ""
     def __init__(self):
@@ -295,8 +296,12 @@ class flex(tk.Tk):
             self.updateCellFromFormulaResult(response)
         for c in self.updateBinds:
             if xl_rowcol_to_cell(response[0], response[1]) in self.updateBinds[c]:
-                if c not in self.formulas[int(response[0])][int(response[1])]:
+                if xl_rowcol_to_cell(response[0], response[1]) not in self.cellRefs:
                     self.updateBinds[c].remove(xl_rowcol_to_cell(response[0], response[1]))
+                    pass
+                elif c not in self.cellRefs[xl_rowcol_to_cell(response[0], response[1])]:
+                    self.updateBinds[c].remove(xl_rowcol_to_cell(response[0], response[1]))
+                    pass
 
     def updateCellFromFormulaResult(self, response):
         if (xl_rowcol_to_cell(response[0], response[1]) in self.updateBinds):
@@ -307,25 +312,62 @@ class flex(tk.Tk):
 
     def interpret(self, f, response):
         vinst = re.compile('[\$]?([aA-zZ]+)[\$]?(\d+)')
-        itern = vinst.finditer(f)
+        rinst = re.compile('(^[A-Z]{1,2}[0-9]{1,}:{1}[A-Z]{1,2}[0-9]{1,}$)|(^\$(([A-Z])|([a-z])){1,2}([0-9]){1,}:{1}\$(([A-Z])|([a-z])){1,2}([0-9]){1,}$)|(^\$(([A-Z])|([a-z])){1,2}(\$){1}([0-9]){1,}:{1}\$(([A-Z])|([a-z])){1,2}(\$){1}([0-9]){1,}$)')
+        iterv = vinst.finditer(f)
+        iterr = rinst.finditer(f)
         varsn = {}
+        parspfr = []
         xln = xl_rowcol_to_cell(response[0], response[1])
         refs = []
-        for match in itern:
+        for match in iterr:
+            cells = []
+            values = []
+            parspfr.append(match.span())
+            c1 = xl_cell_to_rowcol(match.group().split(":")[0])
+            c2 = xl_cell_to_rowcol(match.group().split(":")[1])
+            if (c1[0]>c2[0] or c1[1]>c2[1]):
+                return "RANGE ERROR"
+            else:
+                for x in range(c1[0], c2[0]+1):
+                    for y in range(c1[1], c2[1]+1):
+                        cells.append([x, y])
+                        refs.append(xl_rowcol_to_cell(x, y))
+                        varsn[xl_rowcol_to_cell(x, y)] = self.interpret(self.formulas[x][y][1:], [x, y])
+                        values.append(varsn[xl_rowcol_to_cell(x, y)])
+                        if(xl_rowcol_to_cell(x, y) not in self.updateBinds):
+                            self.updateBinds[xl_rowcol_to_cell(x, y)] = []
+                        self.updateBinds[xl_rowcol_to_cell(x, y)].append(xln)
+                arrystr = "["
+                for value in values:
+                    arrystr += (str(value) + ",")
+                arrystr = arrystr[:-1]
+                arrystr += "]"
+                f = f.replace(match.group(), arrystr)
+        for match in iterv:
             if match.group() == xln:
                 return "RECURSION ERROR"
             else:
-                refs.append(match.group())
-                varsn[match.group()] = self.interpret(self.formulas[xl_cell_to_rowcol(match.group())[0]][xl_cell_to_rowcol(match.group())[1]][1:], xl_cell_to_rowcol(match.group()))
-                if(match.group() not in self.updateBinds):
-                    self.updateBinds[match.group()] = []
-                self.updateBinds[match.group()].append(xln)
-                #print("created a bind: when " + match.group() + " changes, "+xln+" is updated")
+                if(self.checkAlreadyProcessed(parspfr, match)):
+                    pass
+                else:
+                    refs.append(match.group())
+                    varsn[match.group()] = self.interpret(self.formulas[xl_cell_to_rowcol(match.group())[0]][xl_cell_to_rowcol(match.group())[1]][1:], xl_cell_to_rowcol(match.group()))
+                    if(match.group() not in self.updateBinds):
+                        self.updateBinds[match.group()] = []
+                    self.updateBinds[match.group()].append(xln)
         for updc in self.updateBinds:
             self.updateBinds[updc] = list(dict.fromkeys(self.updateBinds[updc]))
         import math
         locals().update(varsn)
+        if(refs!=[]):
+            self.cellRefs[xln]=refs
         return eval(parser.expr(f).compile())
+
+    def checkAlreadyProcessed(self, parspfr, match):
+        for prl in parspfr:
+            if (prl[0] <= match.start() <= prl[1]):
+                return True
+        return False
 
     def getFormulaForResponse(self, response):
         return self.formulas[int(response[0])][int(response[1])]
@@ -350,7 +392,8 @@ class flex(tk.Tk):
         self.updateHighlightedCells()
 
     def shift_select_cells(self, response):
-        print(self.updateBinds)
+        print("update binds:" + str(self.updateBinds))
+        print("cell refs:" + str(self.cellRefs))
 
     def drag_select_cells(self, response):
         self.selectedCell.set(xl_rowcol_to_cell(response[1], response[2]) + ":" + xl_rowcol_to_cell(response[3]-1, response[4]-1))
@@ -374,7 +417,6 @@ class flex(tk.Tk):
             for y in range(len(self.formulas[0])):
                 if(self.formulas[x][y]!="=0"):
                     self.updateCellFromFormulaResult((x, y))
-        self.sheet.refresh()
 
     def save(self):
         if(self.openfile==""):
