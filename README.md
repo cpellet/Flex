@@ -2,7 +2,7 @@
 
 Flex is data-science oriented spreadsheet desktop program written in python, with a TkInter GUI.
 
-![Screenshot](https://github.com/cpellet/Flex/screenshot.png)
+![Screenshot](https://github.com/cpellet/Flex/blob/master/screenshot.png?raw=true)
 ## Installation
 
 Download a [release](https://github.com/cpellet/Flex/releases) to install Flex and install the following dependencies
