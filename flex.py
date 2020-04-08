@@ -4,9 +4,14 @@ import xlsxwriter
 import tkinter as tk
 from tkinter import messagebox
 import statistics
+import datetime
+import matplotlib.pyplot as plt
+from collections import defaultdict
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from tkinter.filedialog import askopenfilename, asksaveasfilename
 import tksheet
 import parser
+import math
 import os
 import csv
 import sys
@@ -66,29 +71,7 @@ class flex(tk.Tk):
                                          "undo",
                                          "edit_cell"))
         self.sheet.grid(row=0, column=0, sticky="nswe")
-        self.menubar = tk.Menu(self)
-        importsubm = tk.Menu(self.menubar, tearoff=0)
-        importsubm.add_command(label="Excel (.xlsx)")
-        importsubm.add_command(label="CSV (.csv)", command=self.importCsv)
-        exportsubm = tk.Menu(self.menubar, tearoff=0)
-        exportsubm.add_command(label="Excel (.xlsx)", command=self.exportToExcel)
-        exportsubm.add_command(label="CSV (.csv)", command=self.exportToCsv)
-        filemenu = tk.Menu(self.menubar, tearoff=0)
-        filemenu.add_command(label="New", command=self.restart, accelerator="Command-n")
-        filemenu.add_command(label="Open...", command=self.open, accelerator="Command-o")
-        filemenu.add_cascade(label='Import', menu=importsubm)
-        filemenu.add_cascade(label='Export', menu=exportsubm)
-        filemenu.add_command(label="Save", command=self.save, accelerator="Command-s")
-        filemenu.add_command(label="Save as...", command=self.saveas, accelerator="Command-shift-s")
-        filemenu.add_separator()
-        filemenu.add_command(label="Exit", command=self.quit, accelerator="Command-q")
-        self.menubar.add_cascade(label="File", menu=filemenu)
-
-        helpmenu = tk.Menu(self.menubar, tearoff=0)
-        helpmenu.add_command(label="Help Index", command=None)
-        helpmenu.add_command(label="About...", command=None)
-        self.menubar.add_cascade(label="Help", menu=helpmenu)
-        self.config(menu=self.menubar)
+        self.buildMenu()
 
         # __________ HIGHLIGHT / DEHIGHLIGHT CELLS __________
 
@@ -242,6 +225,84 @@ class flex(tk.Tk):
 
         # self.sheet.bind("<Motion>", self.mouse_motion)
 
+    def buildMenu(self):
+        self.menubar = tk.Menu(self)
+        importsubm = tk.Menu(self.menubar, tearoff=0)
+        importsubm.add_command(label="Excel (.xlsx)")
+        importsubm.add_command(label="CSV (.csv)", command=self.importCsv)
+        exportsubm = tk.Menu(self.menubar, tearoff=0)
+        exportsubm.add_command(label="Excel (.xlsx)", command=self.exportToExcel)
+        exportsubm.add_command(label="CSV (.csv)", command=self.exportToCsv)
+        filemenu = tk.Menu(self.menubar, tearoff=0)
+        filemenu.add_command(label="New", command=self.restart, accelerator="Command-n")
+        filemenu.add_command(label="Open...", command=self.open, accelerator="Command-o")
+        filemenu.add_cascade(label='Import', menu=importsubm)
+        filemenu.add_cascade(label='Export', menu=exportsubm)
+        filemenu.add_command(label="Save", command=self.save, accelerator="Command-s")
+        filemenu.add_command(label="Save as...", command=self.saveas, accelerator="Command-shift-s")
+        filemenu.add_separator()
+        filemenu.add_command(label="Exit", command=self.quit, accelerator="Command-q")
+        self.menubar.add_cascade(label="File", menu=filemenu)
+        graphmenu = tk.Menu(self.menubar, tearoff=0)
+        graphmenu.add_command(label="Line plot", command=self.samplePlot)
+        graphmenu.add_command(label="Scatter plot", command= lambda: self.samplePlot('ro'))
+        helpmenu = tk.Menu(self.menubar, tearoff=0)
+        helpmenu.add_command(label="Help Index", command=None)
+        helpmenu.add_command(label="About...", command=None)
+        funcmenu = tk.Menu(self.menubar, tearoff=0)
+        self.generateMenuForModule(math, funcmenu, "Math")
+        self.generateMenuForModule(statistics, funcmenu, "Statistics")
+        self.generateMenuForModule(datetime, funcmenu, "Date/Time")
+        self.menubar.add_cascade(label="Functions", menu=funcmenu)
+        self.menubar.add_cascade(label="Graphing", menu=graphmenu)
+        self.menubar.add_cascade(label="Help", menu=helpmenu)
+        self.config(menu=self.menubar)
+
+    def generatePlotValues(self):
+        numbered = defaultdict(list)
+        values = defaultdict(list)
+        title= ""
+        xlabel = ""
+        ylabel = ""
+        for i in self.sheet.get_selected_cells():
+            numbered[i[1]].append(i)
+        i=0
+        for c in numbered:
+            numbered[c] = sorted(numbered[c], key=lambda x: x[0])
+            values[i] = []
+            for el in numbered[c]:
+                values[i].append(self.sheet.get_cell_data(el[0], el[1]))
+            i+=1
+        try:
+            (float(values[0][0]))
+        except ValueError:
+            xlabel=values[1][0]
+            ylabel = values[0][0]
+            title = xlabel + " vs " + ylabel
+            values[0].pop(0)
+            values[1].pop(0)
+        return values, title, xlabel, ylabel
+
+    def samplePlot(self, options):
+        figure = plt.Figure(figsize=(6, 5), dpi=100)
+        ax = figure.add_subplot(111)
+        new_window = tk.Toplevel(self)
+        chart_type = FigureCanvasTkAgg(figure, new_window)
+        chart_type.get_tk_widget().pack()
+        values, title, xlabel, ylabel = self.generatePlotValues()
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
+        ax.set_title(title)
+        ax.plot(values[1], values[0], options)
+
+    def generateMenuForModule(self, module, parent, label):
+        menu = tk.Menu(self.menubar, tearoff=0)
+        for i in dir(module):
+            if(i[0]!="_"):
+                menu.add_command(label=i)
+        parent.add_cascade(label=label, menu=menu)
+
+
     def mouse_motion(self, event):
         region = self.sheet.identify_region(event)
         row = self.sheet.identify_row(event, allow_end=False)
@@ -361,10 +422,13 @@ class flex(tk.Tk):
                         self.updateBinds[match.group()].append(xln)
         for updc in self.updateBinds:
             self.updateBinds[updc] = list(dict.fromkeys(self.updateBinds[updc]))
-        import math
         locals().update(varsn)
         if(refs!=[]):
             self.cellRefs[xln]=refs
+        try:
+            eval(parser.expr(f).compile())
+        except:
+            return f
         return eval(parser.expr(f).compile())
 
     def checkAlreadyProcessed(self, parspfr, match):
